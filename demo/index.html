@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polymarket Automation - Build Trading Bots in Minutes</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #4F46E5;
+            --primary-hover: #4338CA;
+            --text: #1E293B;
+            --text-light: #64748B;
+            --bg: #FFFFFF;
+            --bg-alt: #F8FAFC;
+            --border: #E2E8F0;
+            --success: #10B981;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Navigation - Jelou style */
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .nav-container {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 1.125rem;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .logo-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #4F46E5, #7C3AED);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            align-items: center;
+        }
+
+        .nav-links a {
+            color: var(--text-light);
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.9375rem;
+            transition: color 0.2s;
+        }
+
+        .nav-links a:hover {
+            color: var(--text);
+        }
+
+        .btn-nav {
+            background: var(--primary);
+            color: white;
+            padding: 0.625rem 1.25rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            font-size: 0.9375rem;
+            transition: background 0.2s;
+        }
+
+        .btn-nav:hover {
+            background: var(--primary-hover);
+        }
+
+        /* Hero - Jelou style */
+        .hero {
+            padding: 8rem 2rem 4rem;
+            text-align: center;
+            background: linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%);
+        }
+
+        .hero-content {
+            max-width: 56rem;
+            margin: 0 auto;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: #F1F5F9;
+            padding: 0.5rem 1rem;
+            border-radius: 1.25rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--primary);
+            margin-bottom: 1.5rem;
+        }
+
+        h1 {
+            font-size: 3.75rem;
+            font-weight: 800;
+            line-height: 1.1;
+            margin-bottom: 1.5rem;
+            color: var(--text);
+            letter-spacing: -0.025em;
+        }
+
+        .gradient-text {
+            background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero-subtitle {
+            font-size: 1.25rem;
+            color: var(--text-light);
+            margin-bottom: 2rem;
+            line-height: 1.6;
+        }
+
+        .hero-cta {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            margin-bottom: 3rem;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+            padding: 0.875rem 2rem;
+            border-radius: 0.625rem;
+            font-weight: 600;
+            font-size: 1rem;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: white;
+            color: var(--text);
+            padding: 0.875rem 2rem;
+            border-radius: 0.625rem;
+            font-weight: 600;
+            font-size: 1rem;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--primary);
+        }
+
+        .stats-row {
+            display: flex;
+            justify-content: center;
+            gap: 3rem;
+            margin-top: 3rem;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2.25rem;
+            font-weight: 800;
+            color: var(--primary);
+        }
+
+        .stat-label {
+            color: var(--text-light);
+            font-size: 0.9375rem;
+            margin-top: 0.25rem;
+        }
+
+        /* Builder Section */
+        .builder-section {
+            padding: 5rem 2rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .section-header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        .section-title {
+            font-size: 2.5rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+            color: var(--text);
+            letter-spacing: -0.025em;
+        }
+
+        .section-subtitle {
+            font-size: 1.125rem;
+            color: var(--text-light);
+        }
+
+        .builder-grid {
+            display: grid;
+            grid-template-columns: 280px 1fr 340px;
+            gap: 1.25rem;
+        }
+
+        .panel {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        }
+
+        .panel-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1.25rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .panel-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #4F46E5, #7C3AED);
+            border-radius: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+        }
+
+        .panel-title {
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        /* Blocks */
+        .block-category {
+            margin-bottom: 1.25rem;
+        }
+
+        .category-label {
+            font-size: 0.6875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-light);
+            margin-bottom: 0.625rem;
+            font-weight: 700;
+        }
+
+        .block {
+            padding: 0.75rem 1rem;
+            border-radius: 0.625rem;
+            cursor: grab;
+            color: white;
+            font-weight: 600;
+            font-size: 0.875rem;
+            transition: transform 0.2s;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .block:hover {
+            transform: translateX(4px);
+        }
+
+        .block:active {
+            cursor: grabbing;
+        }
+
+        .block.trigger { background: linear-gradient(135deg, #10B981, #059669); }
+        .block.condition { background: linear-gradient(135deg, #F59E0B, #D97706); }
+        .block.action { background: linear-gradient(135deg, #3B82F6, #2563EB); }
+        .block.strategy { background: linear-gradient(135deg, #8B5CF6, #7C3AED); }
+
+        /* Canvas */
+        .canvas-controls {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .btn-control {
+            padding: 0.625rem 1.25rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            font-size: 0.875rem;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+        }
+
+        .btn-run {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-run:hover {
+            background: #059669;
+        }
+
+        .btn-clear, .btn-export {
+            background: white;
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
+        .btn-clear:hover, .btn-export:hover {
+            border-color: var(--primary);
+        }
+
+        .canvas {
+            min-height: 480px;
+            background: var(--bg-alt);
+            border: 2px dashed var(--border);
+            border-radius: 0.75rem;
+            padding: 1.25rem;
+            transition: all 0.2s;
+        }
+
+        .canvas.drag-over {
+            background: #EEF2FF;
+            border-color: var(--primary);
+        }
+
+        .dropped-block {
+            padding: 0.875rem 1rem;
+            border-radius: 0.625rem;
+            margin-bottom: 0.625rem;
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            animation: dropIn 0.3s ease;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+
+        @keyframes dropIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .remove-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            padding: 0.25rem 0.625rem;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+            font-size: 0.8125rem;
+        }
+
+        .remove-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 5rem 1.25rem;
+            color: var(--text-light);
+        }
+
+        .empty-state svg {
+            width: 48px;
+            height: 48px;
+            margin-bottom: 1rem;
+            opacity: 0.4;
+            stroke: var(--text-light);
+        }
+
+        /* Performance */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.625rem;
+            margin-bottom: 1.25rem;
+        }
+
+        .metric-card {
+            background: var(--bg-alt);
+            border: 1px solid var(--border);
+            padding: 1rem;
+            border-radius: 0.75rem;
+            transition: border-color 0.2s;
+        }
+
+        .metric-card:hover {
+            border-color: var(--primary);
+        }
+
+        .metric-label {
+            font-size: 0.6875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-light);
+            margin-bottom: 0.375rem;
+            font-weight: 600;
+        }
+
+        .metric-value {
+            font-size: 1.875rem;
+            font-weight: 800;
+            color: var(--primary);
+        }
+
+        .console-header {
+            font-size: 0.6875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-light);
+            margin-bottom: 0.625rem;
+            font-weight: 700;
+        }
+
+        .console {
+            background: #0F172A;
+            border: 1px solid var(--border);
+            color: var(--success);
+            font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+            padding: 1rem;
+            border-radius: 0.625rem;
+            max-height: 320px;
+            overflow-y: auto;
+            font-size: 0.8125rem;
+            line-height: 1.6;
+        }
+
+        .console::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .console::-webkit-scrollbar-thumb {
+            background: rgba(16, 185, 129, 0.3);
+            border-radius: 3px;
+        }
+
+        /* Network Toggle */
+        .network-toggle {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            background: var(--bg-alt);
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            margin-bottom: 1.25rem;
+        }
+
+        .network-label {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 48px;
+            height: 24px;
+            background: #cbd5e1;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .toggle-switch.active {
+            background: var(--primary);
+        }
+
+        .toggle-slider {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.3s;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .toggle-switch.active .toggle-slider {
+            transform: translateX(24px);
+        }
+
+        .network-status {
+            font-size: 0.8125rem;
+            font-weight: 600;
+            padding: 0.25rem 0.625rem;
+            border-radius: 0.375rem;
+        }
+
+        .network-status.testnet {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .network-status.mainnet {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        /* Market Selector */
+        .market-selector {
+            padding: 0.75rem 1rem;
+            background: var(--bg-alt);
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            margin-bottom: 1.25rem;
+        }
+
+        .market-label {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--text);
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+
+        .market-selector select {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid var(--border);
+            border-radius: 0.5rem;
+            font-size: 0.875rem;
+            background: white;
+            cursor: pointer;
+        }
+
+        .market-item {
+            padding: 0.5rem;
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            font-size: 0.8125rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .market-item:hover {
+            background: var(--bg-alt);
+        }
+
+        .market-item:last-child {
+            border-bottom: none;
+        }
+
+        .market-item input[type="checkbox"] {
+            cursor: pointer;
+        }
+
+        .selected-count {
+            margin-top: 0.5rem;
+            font-size: 0.8125rem;
+            color: var(--text-light);
+            font-weight: 600;
+        }
+
+        footer {
+            background: var(--bg-alt);
+            padding: 3rem 2rem;
+            text-align: center;
+            border-top: 1px solid var(--border);
+        }
+
+        footer p {
+            color: var(--text-light);
+            font-size: 0.9375rem;
+        }
+
+        @media (max-width: 1024px) {
+            h1 { font-size: 2.5rem; }
+            .builder-grid { grid-template-columns: 1fr; }
+            .nav-links { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="nav-container">
+            <div class="logo">
+                <div class="logo-icon">🤖</div>
+                <span>Polymarket AI</span>
+            </div>
+            <div class="nav-links">
+                <a href="#builder">Builder</a>
+                <a href="#features">Features</a>
+                <a href="https://github.com">GitHub</a>
+                <button class="btn-nav" onclick="scrollToBuilder()">Get Started</button>
+            </div>
+        </div>
+    </nav>
+
+    <section class="hero">
+        <div class="hero-content">
+            <div class="hero-badge">
+                <span>⚡</span>
+                <span>Live Demo • Connected to Polymarket</span>
+            </div>
+            <h1>Build Trading Bots<br><span class="gradient-text">in Minutes</span></h1>
+            <p class="hero-subtitle">
+                Create automated Polymarket strategies with visual blocks or code.<br>
+                Test on real markets, deploy instantly.
+            </p>
+            <div class="hero-cta">
+                <button class="btn-primary" onclick="scrollToBuilder()">Start Building</button>
+                <button class="btn-secondary" onclick="window.open('https://github.com')">View Docs</button>
+            </div>
+            <div class="stats-row">
+                <div class="stat-item">
+                    <div class="stat-value">156</div>
+                    <div class="stat-label">Trades Executed</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">62.8%</div>
+                    <div class="stat-label">Win Rate</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">$1.2k</div>
+                    <div class="stat-label">Total Volume</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="builder-section" id="builder">
+        <div class="section-header">
+            <h2 class="section-title">Visual Strategy Builder</h2>
+            <p class="section-subtitle">Drag blocks to create your trading strategy. No coding required.</p>
+        </div>
+
+        <div class="builder-grid">
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-icon">📦</div>
+                    <h3 class="panel-title">Blocks</h3>
+                </div>
+
+                <!-- Network Toggle -->
+                <div class="network-toggle">
+                    <span class="network-label">Network:</span>
+                    <div class="toggle-switch" id="networkToggle" onclick="toggleNetwork()">
+                        <div class="toggle-slider"></div>
+                    </div>
+                    <span class="network-status testnet" id="networkStatus">Testnet</span>
+                </div>
+
+                <!-- Market Selector -->
+                <div class="market-selector" id="marketSelector" style="display: none;">
+                    <label class="market-label">Select Markets:</label>
+                    <select id="marketFilter" onchange="filterMarkets()">
+                        <option value="all">All Markets (20)</option>
+                        <option value="politics">Politics</option>
+                        <option value="crypto">Crypto</option>
+                        <option value="sports">Sports</option>
+                        <option value="custom">Custom Selection</option>
+                    </select>
+                    <div id="customMarkets" style="display: none; margin-top: 0.5rem;">
+                        <input type="text" id="marketSearch" placeholder="Search markets..." 
+                               oninput="searchMarkets()" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 0.5rem; font-size: 0.875rem;">
+                        <div id="marketList" style="max-height: 200px; overflow-y: auto; margin-top: 0.5rem; border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.5rem;"></div>
+                    </div>
+                    <div class="selected-count" id="selectedCount">Selected: 0 markets</div>
+                </div>
+                
+                <div class="block-category">
+                    <div class="category-label">Triggers</div>
+                    <div class="block trigger" draggable="true" data-type="trigger" data-name="Price Change">🎯 Price Change</div>
+                    <div class="block trigger" draggable="true" data-type="trigger" data-name="Volume Spike">📊 Volume Spike</div>
+                </div>
+                
+                <div class="block-category">
+                    <div class="category-label">Conditions</div>
+                    <div class="block condition" draggable="true" data-type="condition" data-name="Price > 0.5">⚖️ Price > 0.5</div>
+                    <div class="block condition" draggable="true" data-type="condition" data-name="Momentum Positive">📈 Momentum +</div>
+                    <div class="block condition" draggable="true" data-type="condition" data-name="Low Volatility">🎚️ Low Volatility</div>
+                </div>
+                
+                <div class="block-category">
+                    <div class="category-label">Actions</div>
+                    <div class="block action" draggable="true" data-type="action" data-name="Buy">💰 Buy</div>
+                    <div class="block action" draggable="true" data-type="action" data-name="Sell">💸 Sell</div>
+                </div>
+                
+                <div class="block-category">
+                    <div class="category-label">Strategy</div>
+                    <div class="block strategy" draggable="true" data-type="strategy" data-name="Risk Check">🛡️ Risk Check</div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-icon">🎨</div>
+                    <h3 class="panel-title">Canvas</h3>
+                </div>
+                
+                <div class="canvas-controls">
+                    <button class="btn-control btn-run" onclick="runStrategy()"><span>▶️</span><span>Run</span></button>
+                    <button class="btn-control btn-clear" onclick="clearCanvas()"><span>🗑️</span><span>Clear</span></button>
+                    <button class="btn-control btn-export" onclick="exportCode()"><span>💾</span><span>Export</span></button>
+                </div>
+                
+                <div class="canvas" id="canvas">
+                    <div class="empty-state">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                        </svg>
+                        <p>Drag blocks here to build your strategy</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-icon">📊</div>
+                    <h3 class="panel-title">Performance</h3>
+                </div>
+                
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-label">Trades</div>
+                        <div class="metric-value" id="totalTrades">0</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Win Rate</div>
+                        <div class="metric-value" id="winRate">0%</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">P&L</div>
+                        <div class="metric-value" id="pnl">$0</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Sharpe</div>
+                        <div class="metric-value" id="sharpe">0.00</div>
+                    </div>
+                </div>
+                
+                <div class="console-header">Console</div>
+                <div class="console" id="output"><div>Ready to run strategy...</div></div>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <p>Built with ⚡ for Polymarket traders • Open Source • MIT License</p>
+    </footer>
+
+    <script src="app.js"></script>
+    <script>
+        function scrollToBuilder() {
+            document.getElementById('builder').scrollIntoView({ behavior: 'smooth' });
+        }
+    </script>
+</body>
+</html>
