@@ -2,7 +2,7 @@
 
 **No-code trading automation for Polymarket. Build strategies visually, backtest on real data, export to TypeScript.**
 
-[🚀 Try it Live](https://polyflow-app.web.app) • [📖 Documentation](https://docs.polyflow.ai) • [💬 Discord](https://discord.gg/polyflow)
+[🚀 Try it Live](https://polyflow-app.web.app) • [� GitHub](https://github.com/juapperez/polyflow) 
 
 ---
 
@@ -179,10 +179,8 @@ MIT - see [LICENSE](LICENSE)
 
 ## Links
 
-- [Website](https://polyflow.ai)
-- [Docs](https://docs.polyflow.ai)
+- [Live App](https://polyflow-app.web.app)
 - [GitHub](https://github.com/juapperez/polyflow)
-- [Discord](https://discord.gg/polyflow)
 
 ---
 
