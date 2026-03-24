@@ -1227,7 +1227,7 @@ export class CustomStrategy extends Strategy {
                                       style={{ padding: '2px 4px', borderRadius: '4px', border: '1px solid #ddd', fontSize: '0.8rem', width: '60px' }}
                                       value={param.value}
                                       min={param.min} max={param.max} step={param.step}
-                                      onChange={(e) => updateBlockParam(index, param.key, parseFloat(e.target.value) || 0)}
+                                      onChange={(e) => updateBlockParam(index, param.key, e.target.value)}
                                     />
                                     {param.suffix && <span style={{ marginLeft: '2px', color: 'var(--text-gray)' }}>{param.suffix}</span>}
                                   </div>
