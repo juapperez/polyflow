@@ -139,11 +139,11 @@ export const translations = {
       conditions: 'Conditions',
       actions: 'Actions',
       strategy: 'Strategy',
-      run: 'Run',
+      run: 'Validate Setup',
       clear: 'Clear',
       exportStrategy: 'Export Strategy',
-      downloadAll: 'Download Bot',
-      emptyCanvas: 'Drag blocks here to build your strategy',
+      downloadAll: 'Copy Setup Script',
+      emptyCanvas: 'Drag blocks here to build your logic',
       metrics: {
         trades: 'Trades',
         winRate: 'Win Rate',
@@ -309,7 +309,7 @@ export const translations = {
       run: 'Executar',
       clear: 'Limpar',
       exportStrategy: 'Exportar Estratégia',
-      downloadAll: 'Baixar Bot',
+      downloadAll: 'Copiar Script',
       emptyCanvas: 'Arraste blocos aqui para construir sua estratégia',
       metrics: {
         trades: 'Operações',
