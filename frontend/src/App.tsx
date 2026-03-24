@@ -24,16 +24,7 @@ function App() {
             <span style={{ fontWeight: 700, fontSize: '1.4rem', color: 'var(--text-dark)' }}>Poly<span style={{color: 'var(--accent-blue)'}}>Flow</span></span>
           </div>
 
-          <ul className="nav-links flex gap-8 items-center">
-            <li><a href="#product">{t.nav.product}</a></li>
-            <li><a href="#strategies">{t.nav.strategies}</a></li>
-            <li><a href="#developers">{t.nav.developers}</a></li>
-            <li><a href="#docs">{t.nav.docs}</a></li>
-            <li><a href="#pricing">{t.nav.pricing}</a></li>
-          </ul>
-
           <div className="flex gap-4 items-center">
-            <a href="#login" style={{ fontSize: '0.95rem', fontWeight: 500, color: 'var(--text-dark)', textDecoration: 'none' }}>{t.nav.signIn}</a>
             <button className="btn btn-primary" onClick={() => setShowBuilder(true)}>{t.nav.tryBuilder}</button>
             <div className="language-selector">
               <button className="language-btn" onClick={() => setLanguage(language === 'EN' ? 'PT' : 'EN')}>
@@ -68,21 +59,7 @@ function App() {
           <p className="hero-footnote">{t.hero.footnote}</p>
         </div>
 
-        {/* Floating stats cards */}
-        <div className="hero-stats">
-          <div className="stat-card">
-            <div className="stat-value">62.8%</div>
-            <div className="stat-label">{t.hero.stats.winRate}</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">50+</div>
-            <div className="stat-label">{t.hero.stats.markets}</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">1.44</div>
-            <div className="stat-label">{t.hero.stats.sharpe}</div>
-          </div>
-        </div>
+        {/* Stats cards removed — no real data to display yet */}
       </section>
 
       {/* Tools Strip */}
@@ -290,25 +267,24 @@ function App() {
 
       <section className="dark-section">
         <div className="container text-center">
-          <div className="security-subtitle">Security and Compliance</div>
-          <h2>Enterprise-grade security for your trading strategies</h2>
-
+          <div className="security-subtitle">Privacy by Design</div>
+          <h2>Your strategy runs on your machine, not ours</h2>
 
           <div className="privacy-grid text-left">
             <div className="privacy-card" style={{textAlign: 'left'}}>
               <div className="privacy-card-icon"><Lock size={24} /></div>
-              <h4>Strategy Privacy</h4>
-              <p>Your rules and execution logic are encrypted end-to-end and never shared with third parties or stored on external services.</p>
+              <h4>No Server, No Cloud</h4>
+              <p>PolyFlow generates a ready-to-run TypeScript file you download and execute locally. Nothing is sent to our servers — ever.</p>
             </div>
             <div className="privacy-card" style={{textAlign: 'left'}}>
               <div className="privacy-card-icon"><Database size={24} /></div>
-              <h4>Zero Data Exposure</h4>
-              <p>Your API keys and wallet addresses stay strictly in your control. We never process or transmit them to outside services.</p>
+              <h4>Your Keys Stay With You</h4>
+              <p>Your API keys and wallet credentials are only used on your own device. We never see them, store them, or touch them.</p>
             </div>
             <div className="privacy-card" style={{textAlign: 'left'}}>
               <div className="privacy-card-icon"><Fingerprint size={24} /></div>
-              <h4>Auditable Execution</h4>
-              <p>Every trade triggered by your strategy is logged with timestamps and context, giving you complete transparency at all times.</p>
+              <h4>Full Transparency</h4>
+              <p>The exported code is plain TypeScript — open, readable, and auditable. You know exactly what runs before you run it.</p>
             </div>
           </div>
         </div>
@@ -329,21 +305,12 @@ function App() {
                 </a>
               </div>
             </div>
-            <div className="footer-col">
-              <h5>Product</h5>
-              <ul>
-                <li><a href="#">Visual Builder</a></li>
-                <li><a href="#">Backtesting</a></li>
-                <li><a href="#">Auto Execution</a></li>
-                <li><a href="#">Risk Controls</a></li>
-                <li><a href="#">Pricing</a></li>
-              </ul>
-            </div>
+
             <div className="footer-col">
               <h5>Integrations</h5>
               <ul>
                 <li><a href="https://docs.polymarket.com" target="_blank" rel="noopener noreferrer">Polymarket CLOB</a></li>
-                <li><a href="https://www.synthesis.ai" target="_blank" rel="noopener noreferrer">Synthesis API</a></li>
+                <li><a href="https://synthesis.trade/" target="_blank" rel="noopener noreferrer">Synthesis API</a></li>
                 <li><a href="https://ethereum.org/en/developers/" target="_blank" rel="noopener noreferrer">Ethereum</a></li>
                 <li><a href="https://docs.polygon.technology" target="_blank" rel="noopener noreferrer">Polygon</a></li>
                 <li><a href="https://clob.polymarket.com" target="_blank" rel="noopener noreferrer">CLOB REST API</a></li>
@@ -352,23 +319,14 @@ function App() {
             <div className="footer-col">
               <h5>Developers</h5>
               <ul>
-                <li><a href="#">Documentation</a></li>
-                <li><a href="#">API Reference</a></li>
-                <li><a href="#">SDK</a></li>
-                <li><a href="#">Examples</a></li>
-                <li><a href="#">Changelog</a></li>
+                <li><a href="https://github.com/juapperez/polyflow" target="_blank" rel="noopener noreferrer">Documentation</a></li>
+                <li><a href="https://github.com/juapperez/polyflow" target="_blank" rel="noopener noreferrer">API Reference</a></li>
+                <li><a href="https://github.com/juapperez/polyflow" target="_blank" rel="noopener noreferrer">SDK</a></li>
+                <li><a href="https://github.com/juapperez/polyflow" target="_blank" rel="noopener noreferrer">Examples</a></li>
+                <li><a href="https://github.com/juapperez/polyflow" target="_blank" rel="noopener noreferrer">Changelog</a></li>
               </ul>
             </div>
-            <div className="footer-col">
-              <h5>Company</h5>
-              <ul>
-                <li><a href="#">About</a></li>
-                <li><a href="#">Blog</a></li>
-                <li><a href="#">Careers</a></li>
-                <li><a href="#">Contact</a></li>
-                <li><a href="#">Status</a></li>
-              </ul>
-            </div>
+
           </div>
           <div className="footer-bottom">
             <span className="footer-bottom-copy">© 2025 PolyFlow. All rights reserved.</span>

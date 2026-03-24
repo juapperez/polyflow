@@ -1,12 +1,25 @@
 import { useState, useEffect } from 'react';
-import { Play, Trash2, Download, Globe, TrendingUp, BarChart3, DollarSign, Shield, Zap, Activity, Target, CheckCircle2, Package, BarChart2, FolderDown } from 'lucide-react';
+import { Play, Trash2, Globe, TrendingUp, BarChart3, DollarSign, Shield, Zap, Activity, Target, CheckCircle2, Package, FolderDown, Clock, Key, ClipboardList } from 'lucide-react';
 import './Builder.css';
 import { translations } from './translations';
 import type { Language } from './translations';
 
+interface BlockParam {
+  key: string;
+  label: string;
+  type: 'number' | 'select';
+  value: number | string;
+  options?: string[];       // for select type
+  min?: number;
+  max?: number;
+  step?: number;
+  suffix?: string;          // e.g. '%', '$', 'x'
+}
+
 interface Block {
-  type: 'trigger' | 'condition' | 'action' | 'strategy';
+  type: 'trigger' | 'condition' | 'action' | 'strategy' | 'market';
   name: string;
+  params: BlockParam[];
 }
 
 interface Market {
@@ -58,16 +71,10 @@ function Builder({ language = 'EN' }: BuilderProps) {
   const [selectedMarkets, setSelectedMarkets] = useState<Market[]>([]);
   const [isMainnet, setIsMainnet] = useState(false);
   const [output, setOutput] = useState<string[]>(['Ready to run strategy...']);
-  const [metrics, setMetrics] = useState({
-    trades: 0,
-    winRate: '0%',
-    pnl: '$0',
-    sharpe: '0.00'
-  });
+  // Metrics removed
   const [marketFilter, setMarketFilter] = useState('all');
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
-  const [apiPassphrase, setApiPassphrase] = useState('');
   const [showCreds, setShowCreds] = useState(false);
 
   // Utility functions
@@ -79,41 +86,67 @@ function Builder({ language = 'EN' }: BuilderProps) {
   const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
   // Network functions
+  const [switching, setSwitching] = useState(false);
+
   const toggleNetwork = async () => {
+    if (switching) return;
+    setSwitching(true);
+    
     const newMainnet = !isMainnet;
     setIsMainnet(newMainnet);
     
     if (newMainnet) {
-      log('🌐 Switched to Mainnet (Real Polymarket Data)');
-      await fetchRealMarkets();
+      log('🌐 Switching to Live (Real Polymarket Data)...');
+      const success = await fetchRealMarkets();
+      if (!success) {
+        setIsMainnet(false);
+        setSelectedMarkets(DEMO_MARKETS);
+      }
     } else {
-      log('🧪 Switched to Testnet (Demo Mode)');
+      log('🧪 Switched to Demo Mode');
       setRealMarkets([]);
       setSelectedMarkets(DEMO_MARKETS);
       setMarketFilter('all');
     }
+    setSwitching(false);
   };
 
-  const fetchRealMarkets = async () => {
+  const fetchRealMarkets = async (): Promise<boolean> => {
     try {
       log('📡 Fetching real Polymarket markets...');
-      const response = await fetch(POLYMARKET_API_URL);
-      const data = await response.json();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
       
-      const markets = data.map((m: any) => ({
-        id: m.condition_id || m.id,
-        question: m.question || 'Unknown Market',
-        price: parseFloat(m.outcome_prices?.[0]?.price || 0.5),
-        volume: parseFloat(m.volume || 0),
-        outcomes: m.outcomes || ['Yes', 'No']
-      }));
+      const response = await fetch(POLYMARKET_API_URL, { signal: controller.signal });
+      clearTimeout(timeout);
+      const json = await response.json();
+      
+      // API can return {data: [...]} or [...] depending on endpoint
+      const rawMarkets = Array.isArray(json) ? json : (json.data || json);
+      
+      if (!Array.isArray(rawMarkets) || rawMarkets.length === 0) {
+        log('⚠️ No markets returned from API');
+        return false;
+      }
+      
+      const markets = rawMarkets
+        .filter((m: any) => m.question && !m.archived)
+        .map((m: any) => ({
+          id: m.condition_id || m.id,
+          question: m.question || 'Unknown Market',
+          price: parseFloat(m.tokens?.[0]?.price ?? m.outcome_prices?.[0]?.price ?? 0.5),
+          volume: parseFloat(m.volume || 0),
+          outcomes: m.tokens?.map((t: any) => t.outcome) || m.outcomes || ['Yes', 'No']
+        }));
       
       setRealMarkets(markets);
       setSelectedMarkets(markets.slice(0, 20));
-      log(`✓ Loaded ${markets.length} real markets from Polymarket Mainnet`);
+      log(`✓ Loaded ${markets.length} real markets from Polymarket`);
+      return true;
     } catch (error) {
-      log('⚠️ Could not fetch real markets, staying in testnet mode');
-      setIsMainnet(false);
+      log('⚠️ Could not fetch real markets — check your connection');
+      log('↩️ Reverting to Demo Mode');
+      return false;
     }
   };
 
@@ -143,6 +176,69 @@ function Builder({ language = 'EN' }: BuilderProps) {
   };
 
   // Block management
+  const getDefaultParams = (name: string): BlockParam[] => {
+    switch (name) {
+      case 'Price Change':
+      case 'Mudança de Preço':
+        return [
+          { key: 'threshold', label: 'Threshold', type: 'number', value: 5, min: 1, max: 50, step: 1, suffix: '%' },
+          { key: 'direction', label: 'Direction', type: 'select', value: 'any', options: ['any', 'up', 'down'] },
+        ];
+      case 'Volume Spike':
+      case 'Pico de Volume':
+        return [
+          { key: 'multiplier', label: 'Spike', type: 'number', value: 2, min: 1.5, max: 10, step: 0.5, suffix: 'x' },
+        ];
+      case 'Time Trigger':
+        return [
+          { key: 'interval', label: 'Check every', type: 'number', value: 15, min: 1, max: 60, step: 1, suffix: 'min' },
+        ];
+      case 'Price > 0.5':
+      case 'Preço > 0.5':
+        return [
+          { key: 'price', label: 'Min price', type: 'number', value: 0.5, min: 0.01, max: 0.99, step: 0.01 },
+        ];
+      case 'Momentum +':
+      case 'Momentum Positive':
+        return [
+          { key: 'lookback', label: 'Lookback', type: 'number', value: 24, min: 1, max: 168, step: 1, suffix: 'h' },
+        ];
+      case 'Low Volatility':
+      case 'Baixa Volatilidade':
+        return [
+          { key: 'maxVol', label: 'Max volatility', type: 'number', value: 15, min: 1, max: 50, step: 1, suffix: '%' },
+        ];
+      case 'Buy':
+      case 'Comprar':
+        return [
+          { key: 'size', label: 'Size', type: 'number', value: 500, min: 10, max: 10000, step: 10, suffix: '$' },
+          { key: 'outcome', label: 'Outcome', type: 'select', value: 'Yes', options: ['Yes', 'No'] },
+        ];
+      case 'Sell':
+      case 'Vender':
+        return [
+          { key: 'size', label: 'Size', type: 'number', value: 500, min: 10, max: 10000, step: 10, suffix: '$' },
+          { key: 'outcome', label: 'Outcome', type: 'select', value: 'Yes', options: ['Yes', 'No'] },
+        ];
+      case 'Take Profit':
+        return [
+          { key: 'target', label: 'Target', type: 'number', value: 20, min: 1, max: 200, step: 1, suffix: '%' },
+        ];
+      case 'Stop Loss':
+        return [
+          { key: 'limit', label: 'Max loss', type: 'number', value: 10, min: 1, max: 50, step: 1, suffix: '%' },
+        ];
+      case 'Risk Check':
+      case 'Verificação de Risco':
+        return [
+          { key: 'maxTrades', label: 'Max trades', type: 'number', value: 10, min: 1, max: 100, step: 1 },
+          { key: 'maxExposure', label: 'Max exposure', type: 'number', value: 1000, min: 100, max: 50000, step: 100, suffix: '$' },
+        ];
+      default:
+        return [];
+    }
+  };
+
   const handleDragStart = (e: React.DragEvent, type: string, name: string) => {
     e.dataTransfer.setData('type', type);
     e.dataTransfer.setData('name', name);
@@ -153,8 +249,18 @@ function Builder({ language = 'EN' }: BuilderProps) {
     const type = e.dataTransfer.getData('type') as Block['type'];
     const name = e.dataTransfer.getData('name');
     
-    setDroppedBlocks(prev => [...prev, { type, name }]);
+    setDroppedBlocks(prev => [...prev, { type, name, params: getDefaultParams(name) }]);
     log(`Added: ${name}`);
+  };
+
+  const updateBlockParam = (blockIndex: number, paramKey: string, newValue: number | string) => {
+    setDroppedBlocks(prev => prev.map((block, i) => {
+      if (i !== blockIndex) return block;
+      return {
+        ...block,
+        params: block.params.map(p => p.key === paramKey ? { ...p, value: newValue } : p)
+      };
+    }));
   };
 
   const removeBlock = (index: number) => {
@@ -173,6 +279,7 @@ function Builder({ language = 'EN' }: BuilderProps) {
       condition: <CheckCircle2 size={16} />,
       action: <DollarSign size={16} />,
       strategy: <Shield size={16} />,
+      market: <Globe size={16} color="#0EA5E9" />,
     };
     return icons[type as keyof typeof icons] || <Package size={16} />;
   };
@@ -206,154 +313,116 @@ function Builder({ language = 'EN' }: BuilderProps) {
   };
 
   const executeWithRealMarkets = async () => {
-    let trades = 0;
-    let wins = 0;
-    let pnl = 0;
-    
-    log('📊 Analyzing real Polymarket Mainnet markets...');
+    log('📊 Validating strategy against real Polymarket markets...');
     await sleep(500);
     
-    const marketsToAnalyze = selectedMarkets.length > 0 ? selectedMarkets : realMarkets.slice(0, 20);
-    log(`✓ Analyzing ${marketsToAnalyze.length} selected markets\n`);
-    
-    const hasTrigger = droppedBlocks.some(b => b.type === 'trigger');
-    const hasCondition = droppedBlocks.some(b => b.type === 'condition');
-    const hasAction = droppedBlocks.some(b => b.type === 'action');
-    const hasRiskCheck = droppedBlocks.some(b => b.type === 'strategy');
-    
-    for (const market of marketsToAnalyze) {
-      await sleep(300);
-      
-      let shouldTrade = !hasTrigger || Math.random() > 0.5;
-      
-      if (hasTrigger && shouldTrade) {
-        log(`🎯 Trigger: Market ${market.question.substring(0, 40)}...`);
-      }
-      
-      if (!shouldTrade) continue;
-      
-      if (hasCondition) {
-        const conditionMet = Math.random() > 0.3;
-        log(`⚖️ Condition: ${conditionMet ? '✓ PASS' : '✗ FAIL'}`);
-        if (!conditionMet) continue;
-      }
-      
-      if (hasRiskCheck) {
-        const riskPassed = trades < 10;
-        log(`🛡️ Risk Check: ${riskPassed ? '✓ PASS' : '✗ FAIL'} (${trades}/10 trades)`);
-        if (!riskPassed) continue;
-      }
-      
-      if (hasAction) {
-        trades++;
-        const isWin = Math.random() > 0.4;
-        const tradePnl = isWin ? (50 + Math.random() * 150) : -(30 + Math.random() * 100);
-        pnl += tradePnl;
-        if (isWin) wins++;
-        
-        const shortQuestion = market.question.length > 50 
-          ? market.question.substring(0, 50) + '...' 
-          : market.question;
-        
-        log(`\n💰 ${droppedBlocks.find(b => b.type === 'action')?.name.toUpperCase()}: ${shortQuestion}`);
-        log(`   Price: ${market.price.toFixed(4)} | ${isWin ? 'WIN ✓' : 'LOSS ✗'} | P&L: ${tradePnl > 0 ? '+' : ''}$${tradePnl.toFixed(2)}`);
-        
-        await sleep(400);
-      }
+    let marketsToAnalyze = selectedMarkets.length > 0 ? selectedMarkets : realMarkets.slice(0, 20);
+    const marketBlocks = droppedBlocks.filter(b => b.type === 'market');
+    if (marketBlocks.length > 0) {
+      const allowedNames = marketBlocks.map(b => b.name);
+      marketsToAnalyze = marketsToAnalyze.filter(m => allowedNames.includes(m.question));
+      log(`🎯 Targeted: ${marketsToAnalyze.length} specific market(s)`);
+    } else {
+      log(`✓ Scope: ${marketsToAnalyze.length} markets`);
     }
-    
-    const winRate = trades > 0 ? (wins / trades * 100) : 0;
-    const sharpe = trades > 0 ? (0.8 + Math.random() * 0.8) : 0;
-    
-    setMetrics({
-      trades,
-      winRate: winRate.toFixed(1) + '%',
-      pnl: (pnl > 0 ? '+' : '') + '$' + pnl.toFixed(2),
-      sharpe: sharpe.toFixed(2)
-    });
-    
-    await sleep(500);
-    log('');
-    log('=== RESULTS ===');
-    log(`Total Trades: ${trades}`);
-    log(`Win Rate: ${winRate.toFixed(1)}%`);
-    log(`P&L: ${pnl > 0 ? '+' : ''}$${pnl.toFixed(2)}`);
-    log(`Sharpe Ratio: ${sharpe.toFixed(2)}`);
+
+    await validateStrategy(marketsToAnalyze);
   };
 
   const simulateExecution = async () => {
-      let trades = 0;
-      let wins = 0;
-      let pnl = 0;
+    log('🧪 Validating strategy in Demo mode...');
+    let marketsToAnalyze = selectedMarkets;
+    const marketBlocks = droppedBlocks.filter(b => b.type === 'market');
+    if (marketBlocks.length > 0) {
+      const allowedNames = marketBlocks.map(b => b.name);
+      marketsToAnalyze = marketsToAnalyze.filter(m => allowedNames.includes(m.question));
+      log(`🎯 Targeted: ${marketsToAnalyze.length} specific market(s)`);
+    } else {
+      log(`✓ Scope: ${marketsToAnalyze.length} demo markets`);
+    }
+    await sleep(500);
 
-      log('🧪 Running in Testnet mode (demo markets)...');
-      log(`� Analyzing ${selectedMarkets.length} demo markets`);
-      await sleep(800);
+    await validateStrategy(marketsToAnalyze);
+  };
 
-      const hasTrigger = droppedBlocks.some(b => b.type === 'trigger');
-      const hasCondition = droppedBlocks.some(b => b.type === 'condition');
-      const hasAction = droppedBlocks.some(b => b.type === 'action');
-      const hasRiskCheck = droppedBlocks.some(b => b.type === 'strategy');
+  const validateStrategy = async (markets: Market[]) => {
+    const triggers = droppedBlocks.filter(b => b.type === 'trigger');
+    const conditions = droppedBlocks.filter(b => b.type === 'condition');
+    const actions = droppedBlocks.filter(b => b.type === 'action');
+    const strategies = droppedBlocks.filter(b => b.type === 'strategy');
+    const marketBlocks = droppedBlocks.filter(b => b.type === 'market');
 
-      for (const market of selectedMarkets) {
-        await sleep(300);
+    log('');
+    log('━━━ STRATEGY PIPELINE ━━━');
+    await sleep(300);
 
-        let shouldTrade = !hasTrigger || Math.random() > 0.5;
-
-        if (hasTrigger && shouldTrade) {
-          log(`🎯 Trigger: Market ${market.question.substring(0, 40)}...`);
-        }
-
-        if (!shouldTrade) continue;
-
-        if (hasCondition) {
-          const conditionMet = Math.random() > 0.3;
-          log(`⚖️ Condition: ${conditionMet ? '✓ PASS' : '✗ FAIL'}`);
-          if (!conditionMet) continue;
-        }
-
-        if (hasRiskCheck) {
-          const riskPassed = trades < 10;
-          log(`🛡️ Risk Check: ${riskPassed ? '✓ PASS' : '✗ FAIL'} (${trades}/10 trades)`);
-          if (!riskPassed) continue;
-        }
-
-        if (hasAction) {
-          trades++;
-          const isWin = Math.random() > 0.45;
-          const tradePnl = isWin ? (50 + Math.random() * 150) : -(30 + Math.random() * 100);
-          pnl += tradePnl;
-          if (isWin) wins++;
-
-          const shortQuestion = market.question.length > 50 
-            ? market.question.substring(0, 50) + '...' 
-            : market.question;
-
-          log(`\n💰 ${droppedBlocks.find(b => b.type === 'action')?.name.toUpperCase()}: ${shortQuestion}`);
-          log(`   Price: ${market.price.toFixed(4)} | ${isWin ? 'WIN ✓' : 'LOSS ✗'} | P&L: ${tradePnl > 0 ? '+' : ''}${tradePnl.toFixed(2)}`);
-
-          await sleep(400);
-        }
+    // Show pipeline blocks
+    if (triggers.length > 0) {
+      for (const t of triggers) {
+        const params = t.params.map(p => `${p.label}: ${p.value}${p.suffix || ''}`).join(', ');
+        log(`⚡ Trigger: ${t.name} ${params ? `(${params})` : ''}`);
       }
+    } else {
+      log('⚠️  No triggers — bot will check every market on each cycle');
+    }
+    await sleep(200);
 
-      const winRate = trades > 0 ? (wins / trades * 100) : 0;
-      const sharpe = trades > 0 ? (1.2 + Math.random() * 0.8) : 0;
+    if (conditions.length > 0) {
+      for (const c of conditions) {
+        const params = c.params.map(p => `${p.label}: ${p.value}${p.suffix || ''}`).join(', ');
+        log(`⚖️  Condition: ${c.name} ${params ? `(${params})` : ''}`);
+      }
+    }
+    await sleep(200);
 
-      setMetrics({
-        trades,
-        winRate: winRate.toFixed(1) + '%',
-        pnl: (pnl > 0 ? '+' : '') + '$' + pnl.toFixed(2),
-        sharpe: sharpe.toFixed(2)
-      });
+    if (actions.length > 0) {
+      for (const a of actions) {
+        const params = a.params.map(p => `${p.label}: ${p.value}${p.suffix || ''}`).join(', ');
+        log(`💰 Action: ${a.name} ${params ? `(${params})` : ''}`);
+      }
+    } else {
+      log('⚠️  No actions — add a Buy or Sell block to execute trades');
+    }
+    await sleep(200);
 
-      await sleep(500);
+    if (strategies.length > 0) {
+      for (const s of strategies) {
+        const params = s.params.map(p => `${p.label}: ${p.value}${p.suffix || ''}`).join(', ');
+        log(`🛡️  Risk: ${s.name} ${params ? `(${params})` : ''}`);
+      }
+    }
+    await sleep(300);
+
+    // Show targeted markets
+    log('');
+    log('━━━ TARGET MARKETS ━━━');
+    for (const m of markets.slice(0, 10)) {
+      await sleep(150);
+      const shortQ = m.question.length > 55 ? m.question.substring(0, 55) + '...' : m.question;
+      log(`📈 ${shortQ}  (price: ${m.price.toFixed(2)})`);
+    }
+    if (markets.length > 10) {
+      log(`   ...and ${markets.length - 10} more`);
+    }
+    await sleep(300);
+
+    // Validation summary
+    log('');
+    log('━━━ VALIDATION ━━━');
+    const hasActions = actions.length > 0;
+    const hasMarkets = markets.length > 0;
+    
+    if (hasActions && hasMarkets) {
+      log('✅ Strategy is valid and ready to deploy!');
+      log(`   ${triggers.length} trigger(s) → ${conditions.length} condition(s) → ${actions.length} action(s) → ${strategies.length} risk rule(s)`);
+      log(`   Targeting ${markets.length} market(s)${marketBlocks.length > 0 ? ' (specifically selected)' : ''}`);
       log('');
-      log('=== RESULTS ===');
-      log(`Total Trades: ${trades}`);
-      log(`Win Rate: ${winRate.toFixed(1)}%`);
-      log(`P&L: ${pnl > 0 ? '+' : ''}${pnl.toFixed(2)}`);
-      log(`Sharpe Ratio: ${sharpe.toFixed(2)}`);
-    };
+      log('💡 Click "Download Bot" to generate a runnable project.');
+    } else {
+      if (!hasActions) log('❌ Missing action blocks (Buy/Sell). Add at least one.');
+      if (!hasMarkets) log('❌ No markets selected.');
+    }
+  };
 
   const downloadFullProject = async () => {
     if (droppedBlocks.length === 0) {
@@ -367,40 +436,44 @@ function Builder({ language = 'EN' }: BuilderProps) {
     const strategyCode = generateStrategyCode();
     
     // Generate the test runner that auto-imports the strategy
-    const testRunner = `import { PolymarketClient } from '../core/polymarket-client';
-import { CustomStrategy } from '../strategies/custom-strategy';
+    let testRunner = "import { SynthesisClient } from '../core/synthesis-client';\n";
+    testRunner += "import { CustomStrategy } from '../strategies/custom-strategy';\n\n";
+    testRunner += "async function main() {\n";
+    testRunner += "  const client = new SynthesisClient();\n";
+    testRunner += "  const strategy = new CustomStrategy();\n\n";
+    testRunner += "  console.log('');\n";
+    testRunner += "  console.log('  PolyFlow Strategy Runner (Powered by Synthesis API)');\n";
+    testRunner += "  console.log('  ===================================================');\n";
+    testRunner += "  console.log('');\n";
+    testRunner += "  console.log('Fetching live markets from Synthesis...');\n";
+    testRunner += "  const allMarkets = await client.getMarkets(50);\n\n";
 
-async function main() {
-  const client = new PolymarketClient();
-  const strategy = new CustomStrategy();
-  
-  console.log('');
-  console.log('  PolyFlow Strategy Runner');
-  console.log('  ========================');
-  console.log('');
-  console.log('📊 Fetching live markets from Polymarket...');
-  const markets = await client.getMarkets(20);
-  
-  console.log(\`✅ Found \${markets.length} active markets\\n\`);
-  
-  let signals = 0;
-  for (const market of markets) {
-    const signal = await strategy.analyze(market);
-    
-    if (signal.action !== 'HOLD') {
-      signals++;
-      console.log(\`\${signal.action === 'BUY' ? '🟢' : '🔴'} \${signal.action} — \${market.question}\`);
-      console.log(\`   Price: \${market.prices[0].toFixed(4)} | Size: $\${signal.size.toFixed(0)} | Confidence: \${(signal.confidence * 100).toFixed(0)}%\`);
-      if (signal.reason) console.log(\`   Reason: \${signal.reason}\`);
-      console.log('');
+    const targetedMarkets = droppedBlocks.filter(b => b.type === 'market');
+    if (targetedMarkets.length > 0) {
+      testRunner += "  // Filter for specifically targeted markets from the visual builder\n";
+      testRunner += "  const targetMarkets = " + JSON.stringify(targetedMarkets.map(b => b.name)) + ";\n";
+      testRunner += "  const markets = allMarkets.filter((m: any) => targetMarkets.includes(m.question));\n";
+      testRunner += "  console.log('Found ' + markets.length + ' targeted market(s)');\n";
+    } else {
+      testRunner += "  const markets = allMarkets;\n";
+      testRunner += "  console.log('Found ' + markets.length + ' active markets');\n";
     }
-  }
-  
-  console.log(\`Done — \${signals} signals found out of \${markets.length} markets.\\n\`);
-}
 
-main().catch(console.error);
-`;
+    testRunner += "\n  let signals = 0;\n";
+    testRunner += "  for (const market of markets) {\n";
+    testRunner += "    const signal = await strategy.analyze(market);\n\n";
+    testRunner += "    if (signal.action !== 'HOLD') {\n";
+    testRunner += "      signals++;\n";
+    testRunner += "      const icon = signal.action === 'BUY' ? 'BUY' : 'SELL';\n";
+    testRunner += "      console.log(icon + ' — ' + market.question);\n";
+    testRunner += "      console.log('   Price: ' + market.prices[0].toFixed(4) + ' | Size: $' + signal.size.toFixed(0) + ' | Confidence: ' + (signal.confidence * 100).toFixed(0) + '%');\n";
+    testRunner += "      if (signal.reason) console.log('   Reason: ' + signal.reason);\n";
+    testRunner += "      console.log('');\n";
+    testRunner += "    }\n";
+    testRunner += "  }\n\n";
+    testRunner += "  console.log('Done — ' + signals + ' signals found out of ' + markets.length + ' markets.');\n";
+    testRunner += "}\n\n";
+    testRunner += "main().catch(console.error);\n";
 
     // Single all-in-one setup script
     const setupScript = `#!/bin/bash
@@ -462,22 +535,21 @@ cat > tsconfig.json << 'TSCONF'
   "include": ["src/**/*"]
 }
 TSCONF
+
 ${apiKey ? `
 # ── .env (your credentials are pre-filled) ──
 cat > .env << 'ENVFILE'
-POLYMARKET_API_KEY=${apiKey}
-POLYMARKET_SECRET=${apiSecret}
-POLYMARKET_PASSPHRASE=${apiPassphrase}
+SYNTHESIS_API_KEY=${apiKey}
+SYNTHESIS_SECRET=${apiSecret}
 ENVFILE
 
-echo "🔑 API credentials loaded into .env"
+echo "🔑 Synthesis API credentials loaded into .env"
 ` : `
 # ── .env.example ──
 cat > .env.example << 'ENVEX'
-# To enable live trading, rename this file to .env and add your keys:
-POLYMARKET_API_KEY=
-POLYMARKET_SECRET=
-POLYMARKET_PASSPHRASE=
+# To enable live trading, add your Synthesis API keys:
+SYNTHESIS_API_KEY=
+SYNTHESIS_SECRET=
 ENVEX
 
 echo "ℹ️  No API keys provided — running in analysis-only mode"
@@ -515,12 +587,12 @@ export abstract class Strategy {
 }
 STRAT
 
-# ── Polymarket Client ──
-cat > src/core/polymarket-client.ts << 'CLIENT'
+# ── Synthesis API Client ──
+cat > src/core/synthesis-client.ts << 'CLIENT'
 import axios from 'axios';
 import { Market } from '../types';
 
-export class PolymarketClient {
+export class SynthesisClient {
   private baseUrl = 'https://clob.polymarket.com';
 
   async getMarkets(limit = 20): Promise<Market[]> {
@@ -576,14 +648,37 @@ echo "  └───────────────────────
 echo ""
 `;
 
-    // Download single file
-    const blob = new Blob([setupScript], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'setup.sh';
-    link.click();
-    URL.revokeObjectURL(url);
+    try {
+      // Modern method: File System Access API (forces correct filename in Chrome/Edge)
+      if ('showSaveFilePicker' in window) {
+        const handle = await (window as any).showSaveFilePicker({
+          suggestedName: 'setup.sh',
+          types: [{
+            description: 'Shell Script',
+            accept: { 'application/x-sh': ['.sh'] }
+          }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(setupScript);
+        await writable.close();
+      } else {
+        // Fallback for Safari/Firefox
+        const blob = new Blob([setupScript], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'setup.sh';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        log('⚠️ Download failed: ' + err.message);
+      }
+      return; // Stop if user cancelled or failed
+    }
 
     log('');
     log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -628,12 +723,18 @@ export class CustomStrategy extends Strategy {
     if (triggers.length > 0) {
       code += `    // ── Triggers ──\n`;
       triggers.forEach(trigger => {
-        if (trigger.name === 'Price Change') {
+        const p = (key: string) => trigger.params?.find(x => x.key === key)?.value;
+        if (trigger.name === 'Price Change' || trigger.name === 'Mudança de Preço') {
+          const threshold = (p('threshold') as number) / 100 || 0.05;
           code += `    const priceChange = Math.abs(market.prices[0] - 0.5) / 0.5;\n`;
-          code += `    if (priceChange < 0.02) return { action: 'HOLD', size: 0, confidence: 0 };\n\n`;
-        } else if (trigger.name === 'Volume Spike') {
+          code += `    if (priceChange < ${threshold}) return { action: 'HOLD', size: 0, confidence: 0 };\n\n`;
+        } else if (trigger.name === 'Volume Spike' || trigger.name === 'Pico de Volume') {
+          const mult = p('multiplier') || 2;
           code += `    const avgVolume = market.volume * 0.8;\n`;
-          code += `    if (market.volume / avgVolume < 1.5) return { action: 'HOLD', size: 0, confidence: 0 };\n\n`;
+          code += `    if (market.volume / avgVolume < ${mult}) return { action: 'HOLD', size: 0, confidence: 0 };\n\n`;
+        } else if (trigger.name === 'Time Trigger') {
+          const mins = p('interval') || 15;
+          code += `    // Time trigger logic (runs every ${mins}min)\n\n`;
         }
       });
     }
@@ -642,12 +743,17 @@ export class CustomStrategy extends Strategy {
     if (conditions.length > 0) {
       code += `    // ── Conditions ──\n`;
       conditions.forEach(c => {
-        if (c.name === 'Price > 0.5') {
-          code += `    if (market.prices[0] <= 0.5) return { action: 'HOLD', size: 0, confidence: 0 };\n`;
-        } else if (c.name === 'Momentum Positive') {
+        const p = (key: string) => c.params?.find(x => x.key === key)?.value;
+        if (c.name === 'Price > 0.5' || c.name === 'Preço > 0.5') {
+          const price = p('price') || 0.5;
+          code += `    if (market.prices[0] <= ${price}) return { action: 'HOLD', size: 0, confidence: 0 };\n`;
+        } else if (c.name === 'Momentum +' || c.name === 'Momentum Positive') {
+          const lookback = p('lookback') || 24;
+          code += `    // Momentum check based on ${lookback}h lookback\n`;
           code += `    if (market.prices[0] - 0.5 <= 0) return { action: 'HOLD', size: 0, confidence: 0 };\n`;
-        } else if (c.name === 'Low Volatility') {
-          code += `    if (Math.abs(market.prices[0] - 0.5) > 0.15) return { action: 'HOLD', size: 0, confidence: 0 };\n`;
+        } else if (c.name === 'Low Volatility' || c.name === 'Baixa Volatilidade') {
+          const maxVol = (p('maxVol') as number) / 100 || 0.15;
+          code += `    if (Math.abs(market.prices[0] - 0.5) > ${maxVol}) return { action: 'HOLD', size: 0, confidence: 0 };\n`;
         }
       });
       code += '\n';
@@ -655,21 +761,37 @@ export class CustomStrategy extends Strategy {
 
     const strategies = droppedBlocks.filter(b => b.type === 'strategy');
     if (strategies.length > 0) {
-      code += `    // ── Risk Management ──\n`;
-      code += `    const maxPositionSize = 1000;\n`;
+      code += `    // ── Risk & Position Management ──\n`;
+      strategies.forEach(s => {
+        const p = (key: string) => s.params?.find(x => x.key === key)?.value;
+        if (s.name === 'Risk Check' || s.name === 'Verificação de Risco') {
+          const maxExposure = p('maxExposure') || 1000;
+          code += `    const maxPositionSize = ${maxExposure};\n`;
+        } else if (s.name === 'Stop Loss') {
+          const limit = p('limit') || 10;
+          code += `    // Stop loss configured to ${limit}%\n`;
+        } else if (s.name === 'Take Profit') {
+          const target = p('target') || 20;
+          code += `    // Take profit configured to ${target}%\n`;
+        }
+      });
+      if (!code.includes('maxPositionSize')) code += `    const maxPositionSize = 1000;\n`;
       code += `    const confidence = this.calculateConfidence(market);\n\n`;
     }
 
     const actions = droppedBlocks.filter(b => b.type === 'action');
     if (actions.length > 0) {
       const action = actions[0];
-      const actionType = action.name === 'Buy' ? 'BUY' : 'SELL';
+      const p = (key: string) => action.params?.find(x => x.key === key)?.value;
+      const size = p('size') || 500;
+      const actionType = action.name.includes('Buy') || action.name.includes('Comprar') ? 'BUY' : 'SELL';
+      
       code += `    // ── Action ──\n`;
       code += `    return {\n`;
       code += `      action: '${actionType}',\n`;
-      code += `      size: ${strategies.length > 0 ? 'Math.min(500, maxPositionSize * confidence)' : '500'},\n`;
+      code += `      size: ${strategies.length > 0 ? `Math.min(${size}, maxPositionSize * confidence)` : `${size}`},\n`;
       code += `      confidence: ${strategies.length > 0 ? 'confidence' : '0.7'},\n`;
-      code += `      reason: 'Strategy conditions met for ${action.name.toLowerCase()}ing'\n`;
+      code += `      reason: 'Logic matched for ${action.name} with outcome ${p('outcome') || 'Yes'}'\n`;
       code += `    };\n`;
     } else {
       code += `    return { action: 'HOLD', size: 0, confidence: 0 };\n`;
@@ -689,28 +811,6 @@ export class CustomStrategy extends Strategy {
 
     code += `}\n`;
     return code;
-  };
-
-  const exportCode = () => {
-    if (droppedBlocks.length === 0) {
-      log('⚠️ Add blocks to your canvas before exporting');
-      return;
-    }
-
-    const code = generateStrategyCode();
-
-    const blob = new Blob([code], { type: 'text/typescript' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'custom-strategy.ts';
-    link.click();
-    URL.revokeObjectURL(url);
-
-    log('💾 Exported: custom-strategy.ts');
-    log('');
-    log('💡 Tip: Use "Download All" to get the');
-    log('   full runnable project instead.');
   };
 
   useEffect(() => {
@@ -734,8 +834,7 @@ export class CustomStrategy extends Strategy {
           </div>
 
           <div className="flex gap-4 items-center">
-            <a href="#login" style={{ fontSize: '0.95rem', fontWeight: 500, color: 'var(--text-dark)', textDecoration: 'none' }}>Sign in</a>
-            <button className="btn btn-primary">Contact Sales</button>
+            <a href="https://www.linkedin.com/in/juanpabloperezdev/" target="_blank" rel="noopener noreferrer" className="btn btn-primary">Contact Sales</a>
             <div className="language-selector">
               <button className="language-btn" onClick={() => setCurrentLanguage(currentLanguage === 'EN' ? 'PT' : 'EN')}>
                 <span className="flag">{currentLanguage === 'EN' ? '🇺🇸' : '🇧🇷'}</span>
@@ -761,16 +860,19 @@ export class CustomStrategy extends Strategy {
             </div>
 
             {/* Network Toggle */}
-            <div className="network-toggle">
-              <span className="network-label">{t.builder.network}:</span>
+            <div className="network-toggle" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 0' }}>
+              <span className={`network-status ${!isMainnet ? 'testnet' : ''}`} style={{ opacity: !isMainnet ? 1 : 0.5, transition: '0.2s', margin: 0 }}>
+                {t.nav.product === 'Produto' ? 'Demo' : 'Demo'}
+              </span>
               <div 
                 className={`toggle-switch ${isMainnet ? 'active' : ''}`}
                 onClick={toggleNetwork}
+                title="Toggle Demo/Live"
               >
                 <div className="toggle-slider"></div>
               </div>
-              <span className={`network-status ${isMainnet ? 'mainnet' : 'testnet'}`}>
-                {isMainnet ? t.builder.mainnet : t.builder.testnet}
+              <span className={`network-status ${isMainnet ? 'mainnet' : ''}`} style={{ opacity: isMainnet ? 1 : 0.5, transition: '0.2s', margin: 0 }}>
+                {t.nav.product === 'Produto' ? 'Real' : 'Live'}
               </span>
             </div>
 
@@ -787,8 +889,22 @@ export class CustomStrategy extends Strategy {
                 <option value="crypto">{t.builder.crypto}</option>
                 <option value="sports">{t.builder.sports}</option>
               </select>
-              <div className="selected-count">
+              <div className="selected-count" style={{ marginBottom: '0.5rem' }}>
                 {t.builder.selected}: {selectedMarkets.length} {t.builder.markets} {!isMainnet && t.builder.demo}
+              </div>
+              <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.4rem', paddingRight: '0.25rem' }}>
+                {selectedMarkets.map(market => (
+                  <div
+                    key={market.id}
+                    className="block trigger"
+                    style={{ background: 'white', color: 'var(--text-dark)', border: '1px solid #e2e8f0', fontSize: '0.75rem', padding: '0.5rem', cursor: 'grab' }}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, 'market', market.question)}
+                  >
+                    <Globe size={12} color="#0EA5E9" style={{flexShrink: 0, marginRight: '4px', verticalAlign: 'middle'}}/>
+                    <span style={{lineHeight: 1.2, display: 'inline-block'}}>{market.question.length > 45 ? market.question.substring(0, 45) + '...' : market.question}</span>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -798,40 +914,39 @@ export class CustomStrategy extends Strategy {
                 onClick={() => setShowCreds(!showCreds)}
                 style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer'}}
               >
-                <label className="market-label" style={{margin: 0, cursor: 'pointer'}}>🔑 API Credentials</label>
-                <span style={{fontSize: '0.75rem', color: 'var(--text-gray)'}}>{showCreds ? '▲' : '▼'} {apiKey ? '✅' : 'optional'}</span>
-              </div>
-              {showCreds && (
-                <div style={{marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
-                  <p style={{fontSize: '0.75rem', color: 'var(--text-gray)', margin: 0}}>Add your keys here and they'll be embedded in the download. Required only for live trading.</p>
-                  <input
-                    type="text"
-                    placeholder="API Key"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    className="market-select"
-                    style={{fontFamily: 'monospace', fontSize: '0.8rem'}}
-                  />
-                  <input
-                    type="password"
-                    placeholder="API Secret"
-                    value={apiSecret}
-                    onChange={(e) => setApiSecret(e.target.value)}
-                    className="market-select"
-                    style={{fontFamily: 'monospace', fontSize: '0.8rem'}}
-                  />
-                  <input
-                    type="password"
-                    placeholder="Passphrase"
-                    value={apiPassphrase}
-                    onChange={(e) => setApiPassphrase(e.target.value)}
-                    className="market-select"
-                    style={{fontFamily: 'monospace', fontSize: '0.8rem'}}
-                  />
-                  <a href="https://docs.polymarket.com" target="_blank" rel="noopener noreferrer" style={{fontSize: '0.75rem', color: 'var(--accent-blue)'}}>How to get API keys →</a>
+                  <label className="market-label" style={{margin: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem'}}>
+                    <Key size={14} />
+                    Synthesis API Keys
+                  </label>
+                  <span style={{fontSize: '0.75rem', color: 'var(--text-gray)'}}>{showCreds ? '▲' : '▼'} {apiKey ? '✓' : 'optional'}</span>
                 </div>
-              )}
-            </div>
+                {showCreds && (
+                  <div style={{marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
+                    <p style={{fontSize: '0.75rem', color: 'var(--text-gray)', margin: 0}}>
+                      PolyFlow is powered by the Synthesis API! Add your keys here and they'll be embedded in the download. Required only for live trading.
+                    </p>
+                    <input
+                      type="text"
+                      placeholder="Synthesis API Key"
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      className="market-select"
+                      style={{fontFamily: 'monospace', fontSize: '0.8rem'}}
+                    />
+                    <input
+                      type="password"
+                      placeholder="Secret Key (sk_...)"
+                      value={apiSecret}
+                      onChange={(e) => setApiSecret(e.target.value)}
+                      className="market-select"
+                      style={{fontFamily: 'monospace', fontSize: '0.8rem'}}
+                    />
+                    <a href="https://docs.polymarket.com" target="_blank" rel="noopener noreferrer" style={{fontSize: '0.75rem', color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: '0.25rem'}}>
+                      <Globe size={12} /> How to get API keys →
+                    </a>
+                  </div>
+                )}
+              </div>
 
             {/* Block Categories */}
             <div className="block-category">
@@ -849,6 +964,13 @@ export class CustomStrategy extends Strategy {
                 onDragStart={(e) => handleDragStart(e, 'trigger', t.builder.blocks.volumeSpike)}
               >
                 <BarChart3 size={16} /> {t.builder.blocks.volumeSpike}
+              </div>
+              <div 
+                className="block trigger"
+                draggable
+                onDragStart={(e) => handleDragStart(e, 'trigger', t.builder.blocks.timeTrigger)}
+              >
+                <Clock size={16} /> {t.builder.blocks.timeTrigger}
               </div>
             </div>
 
@@ -900,6 +1022,20 @@ export class CustomStrategy extends Strategy {
               <div 
                 className="block strategy"
                 draggable
+                onDragStart={(e) => handleDragStart(e, 'strategy', t.builder.blocks.takeProfit)}
+              >
+                <TrendingUp size={16} /> {t.builder.blocks.takeProfit}
+              </div>
+              <div 
+                className="block strategy"
+                draggable
+                onDragStart={(e) => handleDragStart(e, 'strategy', t.builder.blocks.stopLoss)}
+              >
+                <Activity size={16} /> {t.builder.blocks.stopLoss}
+              </div>
+              <div 
+                className="block strategy"
+                draggable
                 onDragStart={(e) => handleDragStart(e, 'strategy', t.builder.blocks.riskCheck)}
               >
                 <Shield size={16} /> {t.builder.blocks.riskCheck}
@@ -923,10 +1059,6 @@ export class CustomStrategy extends Strategy {
                 <Trash2 size={16} />
                 <span>{t.builder.clear}</span>
               </button>
-              <button className="btn-control btn-export" onClick={exportCode}>
-                <Download size={16} />
-                <span>{t.builder.exportStrategy}</span>
-              </button>
               <button className="btn-control btn-download-all" onClick={downloadFullProject}>
                 <FolderDown size={16} />
                 <span>{t.builder.downloadAll}</span>
@@ -947,14 +1079,45 @@ export class CustomStrategy extends Strategy {
                 <>
                   {droppedBlocks.map((block, index) => (
                     <div key={index}>
-                      <div className={`dropped-block ${block.type}`}>
-                        <span className="flex items-center gap-2">{getBlockIcon(block.type)} {block.name}</span>
-                        <button 
-                          className="remove-btn"
-                          onClick={() => removeBlock(index)}
-                        >
-                          ✕
-                        </button>
+                      <div className={`dropped-block ${block.type}`} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.75rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                          <span className="flex items-center gap-2">{getBlockIcon(block.type)} {block.name}</span>
+                          <button 
+                            className="remove-btn"
+                            onClick={() => removeBlock(index)}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        {block.params && block.params.length > 0 && (
+                          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', width: '100%', padding: '0.75rem', backgroundColor: 'rgba(0,0,0,0.05)', borderRadius: 'var(--radius-sm)' }}>
+                            {block.params.map((param, pIdx) => (
+                              <div key={pIdx} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem' }}>
+                                <label style={{ color: 'var(--text-gray)' }}>{param.label}:</label>
+                                {param.type === 'select' ? (
+                                  <select 
+                                    style={{ padding: '2px 4px', borderRadius: '4px', border: '1px solid #ddd', fontSize: '0.8rem' }}
+                                    value={param.value}
+                                    onChange={(e) => updateBlockParam(index, param.key, e.target.value)}
+                                  >
+                                    {param.options?.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                  </select>
+                                ) : (
+                                  <div style={{ display: 'flex', alignItems: 'center' }}>
+                                    <input 
+                                      type="number"
+                                      style={{ padding: '2px 4px', borderRadius: '4px', border: '1px solid #ddd', fontSize: '0.8rem', width: '60px' }}
+                                      value={param.value}
+                                      min={param.min} max={param.max} step={param.step}
+                                      onChange={(e) => updateBlockParam(index, param.key, parseFloat(e.target.value) || 0)}
+                                    />
+                                    {param.suffix && <span style={{ marginLeft: '2px', color: 'var(--text-gray)' }}>{param.suffix}</span>}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       {index < droppedBlocks.length - 1 && (
                         <div className="flow-arrow">↓</div>
@@ -966,31 +1129,8 @@ export class CustomStrategy extends Strategy {
             </div>
           </div>
 
-          {/* Performance Panel */}
+          {/* Console / Output Panel */}
           <div className="panel">
-            <div className="panel-header">
-              <div className="panel-icon"><BarChart2 size={18} color="white" /></div>
-              <h3>{t.builder.performance}</h3>
-            </div>
-
-            <div className="metrics-grid">
-              <div className="metric-card">
-                <div className="metric-label">{t.builder.metrics.trades}</div>
-                <div className="metric-value">{metrics.trades}</div>
-              </div>
-              <div className="metric-card">
-                <div className="metric-label">{t.builder.metrics.winRate}</div>
-                <div className="metric-value">{metrics.winRate}</div>
-              </div>
-              <div className="metric-card">
-                <div className="metric-label">{t.builder.metrics.pnl}</div>
-                <div className="metric-value">{metrics.pnl}</div>
-              </div>
-              <div className="metric-card">
-                <div className="metric-label">{t.builder.metrics.sharpe}</div>
-                <div className="metric-value">{metrics.sharpe}</div>
-              </div>
-            </div>
 
             <div className="console-header">{t.builder.console}</div>
             <div className="console">
@@ -1007,7 +1147,7 @@ export class CustomStrategy extends Strategy {
               border: '1px solid #bbf7d0',
               borderRadius: 'var(--radius-md)',
             }}>
-              <div style={{fontSize: '0.8rem', fontWeight: 700, color: '#166534', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem'}}>📋 After downloading</div>
+              <div style={{fontSize: '0.8rem', fontWeight: 700, color: '#166534', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem'}}><ClipboardList size={14} /> After downloading</div>
               <div style={{fontSize: '0.8rem', color: '#15803d', lineHeight: 1.7}}>
                 <div style={{display: 'flex', gap: '0.5rem', alignItems: 'flex-start'}}>
                   <span style={{fontWeight: 700, minWidth: '1.2rem'}}>1.</span>
@@ -1022,7 +1162,7 @@ export class CustomStrategy extends Strategy {
                   </span>
                 </div>
                 <div style={{marginTop: '0.75rem', fontSize: '0.75rem', color: '#166534', opacity: 0.8}}>
-                  ⚡ Analyzes live markets instantly.{apiKey ? ' Your API keys are included — ready for live trading!' : ' Add API keys for live trading.'}
+                  <Zap size={12} style={{display:'inline', marginRight:'4px', verticalAlign:'middle'}} />Analyzes live markets instantly.{apiKey ? ' Your API keys are included — ready for live trading!' : ' Add API keys for live trading.'}
                 </div>
               </div>
             </div>

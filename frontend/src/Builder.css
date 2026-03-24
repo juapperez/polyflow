@@ -32,6 +32,7 @@
   display: grid;
   grid-template-columns: 280px 1fr 340px;
   gap: 1.5rem;
+  align-items: start;
 }
 
 .panel {
@@ -40,6 +41,10 @@
   border-radius: var(--radius-lg);
   padding: 1.5rem;
   box-shadow: var(--shadow-card);
+  max-height: calc(100vh - 180px);
+  overflow-y: auto;
+  position: sticky;
+  top: 100px;
 }
 
 .panel-header {
@@ -121,6 +126,7 @@
   font-weight: 600;
   padding: 0.25rem 0.625rem;
   border-radius: var(--radius-sm);
+  white-space: nowrap;
 }
 
 .network-status.testnet {
@@ -265,17 +271,13 @@
   transform: translateY(-1px);
 }
 
-.btn-clear,
-.btn-export,
-.btn-download-all {
+.btn-clear {
   background: white;
   color: var(--text-dark);
   border: 1px solid rgba(0,0,0,0.1);
 }
 
-.btn-clear:hover,
-.btn-export:hover,
-.btn-download-all:hover {
+.btn-clear:hover {
   border-color: var(--accent-blue);
   background: var(--bg-blue-light);
 }
