@@ -58,7 +58,7 @@ const DEMO_MARKETS: Market[] = [
   { id: 'demo-20', question: 'Will China GDP growth exceed 5%?', price: 0.49, volume: 142000, outcomes: ['Yes', 'No'] },
 ];
 
-const POLYMARKET_API_URL = 'https://clob.polymarket.com/markets?limit=50&closed=false';
+const POLYMARKET_API_URL = 'https://synthesis.trade/api/v1/markets?venue=polymarket&limit=100&status=active';
 
 function Builder({ language = 'EN' }: BuilderProps) {
   const [currentLanguage, setCurrentLanguage] = useState<Language>(language);
@@ -121,8 +121,22 @@ function Builder({ language = 'EN' }: BuilderProps) {
       clearTimeout(timeout);
       const json = await response.json();
       
-      // API can return {data: [...]} or [...] depending on endpoint
-      const rawMarkets = Array.isArray(json) ? json : (json.data || json);
+      // API can return {data: [...]} or {success, response: [{event, markets}]} or [...]
+      let rawMarkets: any[] = [];
+      if (Array.isArray(json)) {
+        rawMarkets = json;
+      } else if (json.success && Array.isArray(json.response)) {
+        // Synthesis API format: flatten event → markets
+        for (const entry of json.response) {
+          if (entry.markets && Array.isArray(entry.markets)) {
+            rawMarkets.push(...entry.markets);
+          } else {
+            rawMarkets.push(entry);
+          }
+        }
+      } else if (json.data) {
+        rawMarkets = json.data;
+      }
       
       if (!Array.isArray(rawMarkets) || rawMarkets.length === 0) {
         log('⚠️ No markets returned from API');
@@ -130,18 +144,20 @@ function Builder({ language = 'EN' }: BuilderProps) {
       }
       
       const markets = rawMarkets
-        .filter((m: any) => m.question && !m.archived)
+        .filter((m: any) => (m.question || m.title) && m.active !== false && !m.resolved)
         .map((m: any) => ({
           id: m.condition_id || m.id,
-          question: m.question || 'Unknown Market',
-          price: parseFloat(m.tokens?.[0]?.price ?? m.outcome_prices?.[0]?.price ?? 0.5),
-          volume: parseFloat(m.volume || 0),
-          outcomes: m.tokens?.map((t: any) => t.outcome) || m.outcomes || ['Yes', 'No']
-        }));
+          question: m.question || m.title || 'Unknown Market',
+          price: parseFloat(m.left_price ?? m.tokens?.[0]?.price ?? m.yes_price ?? 0.5),
+          volume: parseFloat(m.volume || m.volume24hr || 0),
+          outcomes: [m.left_outcome || 'Yes', m.right_outcome || 'No']
+        }))
+        .filter((m: any) => m.price > 0.05 && m.price < 0.95)
+        .sort((a: any, b: any) => b.volume - a.volume);
       
       setRealMarkets(markets);
       setSelectedMarkets(markets.slice(0, 20));
-      log(`✓ Loaded ${markets.length} real markets from Polymarket`);
+      log(`✓ Loaded ${markets.length} active markets from Polymarket`);
       return true;
     } catch (error) {
       log('⚠️ Could not fetch real markets — check your connection');
@@ -416,8 +432,7 @@ function Builder({ language = 'EN' }: BuilderProps) {
       log('✅ Strategy is valid and ready to deploy!');
       log(`   ${triggers.length} trigger(s) → ${conditions.length} condition(s) → ${actions.length} action(s) → ${strategies.length} risk rule(s)`);
       log(`   Targeting ${markets.length} market(s)${marketBlocks.length > 0 ? ' (specifically selected)' : ''}`);
-      log('');
-      log('💡 Click "Download Bot" to generate a runnable project.');
+      log('💡 Click "Copy Setup Script" to grab your runnable project code.');
     } else {
       if (!hasActions) log('❌ Missing action blocks (Buy/Sell). Add at least one.');
       if (!hasMarkets) log('❌ No markets selected.');
@@ -436,66 +451,156 @@ function Builder({ language = 'EN' }: BuilderProps) {
     const strategyCode = generateStrategyCode();
     
     // Generate the test runner that auto-imports the strategy
-    let testRunner = "import { SynthesisClient } from '../core/synthesis-client';\n";
+    let testRunner = "";
+    testRunner += "import * as dotenv from 'dotenv';\n";
+    testRunner += "dotenv.config();\n\n";
+    testRunner += "import axios from 'axios';\n";
+    testRunner += "import { SynthesisClient } from '../core/synthesis-client';\n";
     testRunner += "import { CustomStrategy } from '../strategies/custom-strategy';\n\n";
+    testRunner += "const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));\n\n";
     testRunner += "async function main() {\n";
     testRunner += "  const client = new SynthesisClient();\n";
     testRunner += "  const strategy = new CustomStrategy();\n\n";
     testRunner += "  console.log('');\n";
-    testRunner += "  console.log('  PolyFlow Strategy Runner (Powered by Synthesis API)');\n";
-    testRunner += "  console.log('  ===================================================');\n";
+    testRunner += "  console.log('  PolyFlow Continuous Bot (Powered by Synthesis API)');\n";
+    testRunner += "  console.log('  ===================================================');\n\n";
+    testRunner += "  const PROJECT_SECRET = process.env.SYNTHESIS_SECRET;\n";
+    testRunner += "  let accountApiKey = '';\n";
+    testRunner += "  let walletId = '';\n\n";
+    testRunner += "  if (PROJECT_SECRET) {\n";
+    testRunner += "    try {\n";
+    testRunner += "      console.log('  Authenticating with Synthesis Network...');\n";
+    testRunner += "      let accountId = '';\n";
+    testRunner += "      const acctRes = await axios.get('https://synthesis.trade/api/v1/project/account', {\n";
+    testRunner += "        headers: { 'X-PROJECT-API-KEY': PROJECT_SECRET }\n";
+    testRunner += "      });\n";
+    testRunner += "      if (acctRes.data?.success && acctRes.data?.response?.length > 0) {\n";
+    testRunner += "        accountId = acctRes.data.response[0].account_id;\n";
+    testRunner += "        console.log('  ✅ Account Found: ' + accountId);\n";
+    testRunner += "      } else {\n";
+    testRunner += "        console.log('  ⚠️ No accounts. Auto-provisioning...');\n";
+    testRunner += "        const createRes = await axios.post('https://synthesis.trade/api/v1/project/account', {}, {\n";
+    testRunner += "          headers: { 'X-PROJECT-API-KEY': PROJECT_SECRET }\n";
+    testRunner += "        });\n";
+    testRunner += "        accountId = createRes.data?.response?.account_id || '';\n";
+    testRunner += "        console.log('  ✅ New Account Created: ' + accountId);\n";
+    testRunner += "      }\n";
+    testRunner += "      if (accountId) {\n";
+    testRunner += "        console.log('  🔑 Generating Account API Key...');\n";
+    testRunner += "        const keyRes = await axios.post('https://synthesis.trade/api/v1/project/account/' + accountId + '/api-key',\n";
+    testRunner += "          { name: 'polyflow-bot' },\n";
+    testRunner += "          { headers: { 'X-PROJECT-API-KEY': PROJECT_SECRET, 'Content-Type': 'application/json' } }\n";
+    testRunner += "        );\n";
+    testRunner += "        if (keyRes.data?.success) {\n";
+    testRunner += "          accountApiKey = keyRes.data.response.secret_key;\n";
+    testRunner += "          console.log('  ✅ Account API Key Created: ' + keyRes.data.response.public_key);\n";
+    testRunner += "        }\n";
+    testRunner += "      }\n";
+    testRunner += "      if (accountApiKey) {\n";
+    testRunner += "        console.log('  💼 Creating Polygon Wallet...');\n";
+    testRunner += "        const walletRes = await axios.post('https://synthesis.trade/api/v1/wallet', {}, {\n";
+    testRunner += "          headers: { 'X-API-KEY': accountApiKey }\n";
+    testRunner += "        });\n";
+    testRunner += "        if (walletRes.data?.success) {\n";
+    testRunner += "          walletId = walletRes.data.response.wallet_id;\n";
+    testRunner += "          const polyAddr = walletRes.data.response.chains?.POL?.address || 'unknown';\n";
+    testRunner += "          console.log('  ✅ Wallet Created: ' + walletId);\n";
+    testRunner += "          console.log('  📍 Polygon Address: ' + polyAddr);\n";
+    testRunner += "        }\n";
+    testRunner += "      }\n";
+    testRunner += "    } catch (e: any) {\n";
+    testRunner += "      console.log('  ⚠️ Setup Warning: ' + (e.response?.data?.message || e.message));\n";
+    testRunner += "    }\n";
+    testRunner += "  } else {\n";
+    testRunner += "    console.log('  ⚠️ Paper Trading Mode (No API Keys)');\n";
+    testRunner += "  }\n\n";
     testRunner += "  console.log('');\n";
-    testRunner += "  console.log('Fetching live markets from Synthesis...');\n";
-    testRunner += "  const allMarkets = await client.getMarkets(50);\n\n";
+    testRunner += "  console.log('  Waiting 10s between market checks... Press Ctrl+C to stop.');\n";
+    testRunner += "  console.log('');\n\n";
+    testRunner += "  let cycle = 1;\n";
+    testRunner += "  while (true) {\n";
+    testRunner += "    console.log('[Cycle ' + cycle + '] Fetching live markets from Synthesis...');\n";
+    testRunner += "    const allMarkets = await client.getMarkets(500);\n\n";
 
-    const targetedMarkets = droppedBlocks.filter(b => b.type === 'market');
+    const targetedMarkets = droppedBlocks.filter((b: any) => b.type === 'market');
     if (targetedMarkets.length > 0) {
-      testRunner += "  // Filter for specifically targeted markets from the visual builder\n";
-      testRunner += "  const targetMarkets = " + JSON.stringify(targetedMarkets.map(b => b.name)) + ";\n";
-      testRunner += "  const markets = allMarkets.filter((m: any) => targetMarkets.includes(m.question));\n";
-      testRunner += "  console.log('Found ' + markets.length + ' targeted market(s)');\n";
+      testRunner += "    const targetMarkets = " + JSON.stringify(targetedMarkets.map((b: any) => b.name)) + ";\n";
+      testRunner += "    console.log('    Looking for targets: ', targetMarkets);\n";
+      testRunner += "    console.log('    Total live markets received from API: ' + allMarkets.length);\n";
+      testRunner += "    const markets = allMarkets.filter((m: any) => targetMarkets.includes(m.question));\n";
+      testRunner += "    console.log('    Found ' + markets.length + ' matched market(s)');\n";
     } else {
-      testRunner += "  const markets = allMarkets;\n";
-      testRunner += "  console.log('Found ' + markets.length + ' active markets');\n";
+      testRunner += "    const markets = allMarkets;\n";
+      testRunner += "    console.log('    Found ' + markets.length + ' active markets');\n";
     }
 
-    testRunner += "\n  let signals = 0;\n";
-    testRunner += "  for (const market of markets) {\n";
-    testRunner += "    const signal = await strategy.analyze(market);\n\n";
-    testRunner += "    if (signal.action !== 'HOLD') {\n";
-    testRunner += "      signals++;\n";
-    testRunner += "      const icon = signal.action === 'BUY' ? 'BUY' : 'SELL';\n";
-    testRunner += "      console.log(icon + ' — ' + market.question);\n";
-    testRunner += "      console.log('   Price: ' + market.prices[0].toFixed(4) + ' | Size: $' + signal.size.toFixed(0) + ' | Confidence: ' + (signal.confidence * 100).toFixed(0) + '%');\n";
-    testRunner += "      if (signal.reason) console.log('   Reason: ' + signal.reason);\n";
-    testRunner += "      console.log('');\n";
+    testRunner += "    console.log('');\n";
+    testRunner += "    let signals = 0;\n";
+    testRunner += "    for (const market of markets) {\n";
+    testRunner += "      const signal = await strategy.analyze(market);\n";
+    testRunner += "      if (signal.action !== 'HOLD') {\n";
+    testRunner += "        signals++;\n";
+    testRunner += "        const icon = signal.action === 'BUY' ? 'BUY' : 'SELL';\n";
+    testRunner += "        console.log('    ' + icon + ' — ' + market.question);\n";
+    testRunner += "        console.log('      Token: ' + market.token_id);\n";
+    testRunner += "        console.log('      Price: ' + market.prices[0].toFixed(4) + ' | Size: $' + signal.size.toFixed(0) + ' | Confidence: ' + (signal.confidence * 100).toFixed(0) + '%');\n";
+    testRunner += "        if (signal.reason) console.log('      Reason: ' + signal.reason);\n";
+    testRunner += "        if (market.prices[0] >= 0.99 || market.prices[0] <= 0.01) {\n";
+    testRunner += "          console.log('      ⚠️ Market already resolved (price ' + market.prices[0] + ') — skipping order.');\n";
+    testRunner += "          console.log('');\n";
+    testRunner += "          continue;\n";
+    testRunner += "        }\n";
+    testRunner += "        if (accountApiKey && walletId) {\n";
+    testRunner += "          console.log('      ⚡ Routing ' + icon + ' order to Synthesis Network...');\n";
+    testRunner += "          try {\n";
+    testRunner += "            if (!market.token_id) { console.log('      ⚠️ No token_id for this market, skipping order.'); } else {\n";
+    testRunner += "            const orderRes = await axios.post('https://synthesis.trade/api/v1/wallet/pol/' + walletId + '/order', {\n";
+    testRunner += "              token_id: market.token_id,\n";
+    testRunner += "              side: signal.action.toUpperCase(),\n";
+    testRunner += "              type: 'MARKET',\n";
+    testRunner += "              amount: String(signal.size),\n";
+    testRunner += "              units: 'USDC',\n";
+    testRunner += "            }, { headers: { 'X-API-KEY': accountApiKey, 'Content-Type': 'application/json' } });\n";
+    testRunner += "            if (orderRes.data?.success) {\n";
+    testRunner += "              const ord = orderRes.data.response;\n";
+    testRunner += "              console.log('      ✅ Order Filled! ID: ' + ord.order_id + ' | Status: ' + ord.status + ' | Shares: ' + ord.shares);\n";
+    testRunner += "            }\n";
+    testRunner += "            }\n";
+    testRunner += "          } catch(err: any) {\n";
+    testRunner += "            console.log('      ❌ Order Failed: ' + JSON.stringify(err.response?.data || err.message));\n";
+    testRunner += "          }\n";
+    testRunner += "        } else {\n";
+    testRunner += "          console.log('      ⚠️ No wallet — order simulated locally.');\n";
+    testRunner += "        }\n";
+    testRunner += "        console.log('');\n";
+    testRunner += "      }\n";
     testRunner += "    }\n";
-    testRunner += "  }\n\n";
-    testRunner += "  console.log('Done — ' + signals + ' signals found out of ' + markets.length + ' markets.');\n";
+    testRunner += "    if (signals === 0) {\n";
+    testRunner += "      console.log('    No signals generated this cycle.');\n";
+    testRunner += "    } else {\n";
+    testRunner += "      console.log('    Done — ' + signals + ' signals executed.');\n";
+    testRunner += "    }\n";
+    testRunner += "    console.log('');\n";
+    testRunner += "    cycle++;\n";
+    testRunner += "    await sleep(10000);\n";
+    testRunner += "  }\n";
     testRunner += "}\n\n";
     testRunner += "main().catch(console.error);\n";
 
-    // Single all-in-one setup script
-    const setupScript = `#!/bin/bash
-# ═══════════════════════════════════════════════════
-#  PolyFlow — All-in-One Strategy Setup
-#  Generated: ${new Date().toLocaleString()}
-#  Blocks: ${droppedBlocks.map(b => b.name).join(' → ')}
-# ═══════════════════════════════════════════════════
-
-set -e
+    // Single all-in-one setup script (No comments, prevents zsh interactive parser errors on paste)
+    const setupScript = `set -e
 
 echo ""
 echo "  PolyFlow — Setting up your trading bot"
 echo "  ═══════════════════════════════════════"
 echo ""
 
-# Create project
+echo "── Creating project ──"
 mkdir -p polyflow-bot && cd polyflow-bot
 
 mkdir -p src/core src/strategies src/types src/examples
 
-# ── package.json ──
+echo "── package.json ──"
 cat > package.json << 'PKGJSON'
 {
   "name": "polyflow-bot",
@@ -518,7 +623,7 @@ cat > package.json << 'PKGJSON'
 }
 PKGJSON
 
-# ── tsconfig.json ──
+echo "── tsconfig.json ──"
 cat > tsconfig.json << 'TSCONF'
 {
   "compilerOptions": {
@@ -537,7 +642,7 @@ cat > tsconfig.json << 'TSCONF'
 TSCONF
 
 ${apiKey ? `
-# ── .env (your credentials are pre-filled) ──
+echo "── .env (your credentials are pre-filled) ──"
 cat > .env << 'ENVFILE'
 SYNTHESIS_API_KEY=${apiKey}
 SYNTHESIS_SECRET=${apiSecret}
@@ -545,7 +650,7 @@ ENVFILE
 
 echo "🔑 Synthesis API credentials loaded into .env"
 ` : `
-# ── .env.example ──
+echo "── .env.example ──"
 cat > .env.example << 'ENVEX'
 # To enable live trading, add your Synthesis API keys:
 SYNTHESIS_API_KEY=
@@ -556,10 +661,11 @@ echo "ℹ️  No API keys provided — running in analysis-only mode"
 echo "   To trade, rename .env.example to .env and add your keys"
 `}
 
-# ── Types ──
+echo "── Types ──"
 cat > src/types/index.ts << 'TYPES'
 export interface Market {
   id: string;
+  token_id: string;
   question: string;
   outcomes: string[];
   prices: number[];
@@ -576,7 +682,7 @@ export interface Signal {
 }
 TYPES
 
-# ── Base Strategy ──
+echo "── Base Strategy ──"
 cat > src/core/strategy.ts << 'STRAT'
 import { Market, Signal } from '../types';
 
@@ -587,29 +693,50 @@ export abstract class Strategy {
 }
 STRAT
 
-# ── Synthesis API Client ──
+echo "── Synthesis API Client ──"
 cat > src/core/synthesis-client.ts << 'CLIENT'
 import axios from 'axios';
 import { Market } from '../types';
 
 export class SynthesisClient {
-  private baseUrl = 'https://clob.polymarket.com';
+  private baseUrl = 'https://synthesis.trade/api/v1';
 
-  async getMarkets(limit = 20): Promise<Market[]> {
+  async getMarkets(limit = 100): Promise<Market[]> {
     try {
       const { data } = await axios.get(\`\${this.baseUrl}/markets\`, {
-        params: { limit, active: true, closed: false }
+        params: { venue: 'polymarket', limit, status: 'active' }
       });
-      const list = Array.isArray(data) ? data : data.data || [];
-      return list.map((m: any) => ({
-        id: m.condition_id || m.id,
-        question: m.question || 'Unknown',
-        outcomes: m.outcomes || ['Yes', 'No'],
-        prices: m.outcome_prices?.map((p: any) => parseFloat(p.price)) || [0.5, 0.5],
-        volume: parseFloat(m.volume || '0'),
-        liquidity: parseFloat(m.liquidity || '0'),
-        endDate: new Date(m.end_date_iso || Date.now() + 86400000)
-      }));
+      
+      let rawMarkets: any[] = [];
+      if (Array.isArray(data)) {
+        rawMarkets = data;
+      } else if (data.success && Array.isArray(data.response)) {
+        for (const entry of data.response) {
+          if (entry.markets && Array.isArray(entry.markets)) {
+            rawMarkets.push(...entry.markets);
+          } else {
+            rawMarkets.push(entry);
+          }
+        }
+      } else if (data.data) {
+        rawMarkets = data.data;
+      }
+
+      return rawMarkets
+        .filter((m: any) => (m.question || m.title) && m.active !== false && !m.resolved)
+        .map((m: any) => ({
+          id: m.condition_id || m.id,
+          token_id: m.left_token_id || m.tokens?.[0]?.token_id || '',
+          question: m.question || m.title || 'Unknown',
+          outcomes: [m.left_outcome || 'Yes', m.right_outcome || 'No'],
+          prices: [
+            parseFloat(m.left_price ?? m.tokens?.[0]?.price ?? 0.5),
+            parseFloat(m.right_price ?? m.tokens?.[1]?.price ?? 0.5)
+          ],
+          volume: parseFloat(m.volume || m.volume24hr || '0'),
+          liquidity: parseFloat(m.liquidity || '0'),
+          endDate: new Date(m.ends_at || m.end_date_iso || Date.now() + 86400000)
+        }));
     } catch (e) {
       console.error('Error fetching markets:', e);
       return [];
@@ -618,76 +745,49 @@ export class SynthesisClient {
 }
 CLIENT
 
-# ── Your Strategy (auto-generated from PolyFlow blocks) ──
+echo "── Your Strategy (auto-generated from PolyFlow blocks) ──"
 cat > src/strategies/custom-strategy.ts << 'CUSTOMSTRAT'
 ${strategyCode}
 CUSTOMSTRAT
 
-# ── Test Runner ──
+echo "── Test Runner ──"
 cat > src/examples/run-strategy.ts << 'RUNNER'
 ${testRunner}
 RUNNER
 
-# ── Install & Done ──
+echo "── Install & Done ──"
 echo "📦 Installing dependencies..."
 npm install --silent
 
-echo ""
-echo "  ✅ Setup complete!"
-echo ""
-echo "  ┌──────────────────────────────────────────────┐"
-echo "  │  To run your bot:                            │"
-echo "  │                                              │"
-echo "  │    cd polyflow-bot                           │"
-echo "  │    npm start                                 │"
-echo "  │                                              │"
-echo "  │  ⚡ Analyzes live Polymarket data (no keys). │"
-echo "  │  💰 To place real trades, add your API keys  │"
-echo "  │     and wallet to the .env file.              │"
-echo "  └──────────────────────────────────────────────┘"
-echo ""
+cat << 'INFO'
+
+  ✅ Setup complete! Booting up your trading bot now...
+
+INFO
+
+echo "🚀 Launching the bot immediately..."
+npm start
+
+
 `;
 
     try {
-      // Modern method: File System Access API (forces correct filename in Chrome/Edge)
-      if ('showSaveFilePicker' in window) {
-        const handle = await (window as any).showSaveFilePicker({
-          suggestedName: 'setup.sh',
-          types: [{
-            description: 'Shell Script',
-            accept: { 'application/x-sh': ['.sh'] }
-          }]
-        });
-        const writable = await handle.createWritable();
-        await writable.write(setupScript);
-        await writable.close();
-      } else {
-        // Fallback for Safari/Firefox
-        const blob = new Blob([setupScript], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = 'setup.sh';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-      }
+      // Chrome's download manager is being overly restrictive with blobs on macOS
+      // The most reliable and frictionless way is to just write it to the clipboard!
+      await navigator.clipboard.writeText(setupScript);
+      
     } catch (err: any) {
-      if (err.name !== 'AbortError') {
-        log('⚠️ Download failed: ' + err.message);
-      }
-      return; // Stop if user cancelled or failed
+      log('⚠️ Clipboard copy failed: ' + err.message);
+      return; 
     }
 
     log('');
     log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    log('✅ Downloaded: setup.sh');
+    log('✅ Copied to clipboard!');
     log('');
-    log('📋 Just 2 commands:');
+    log('📋 Just paste it directly into your terminal:');
     log('');
-    log('   Step 1:  bash setup.sh');
-    log('   Step 2:  cd polyflow-bot && npm start');
+    log('   (Press Cmd+V then Enter)');
     log('');
     if (apiKey) {
       log('🔑 API keys embedded — ready for');
@@ -1147,22 +1247,15 @@ export class CustomStrategy extends Strategy {
               border: '1px solid #bbf7d0',
               borderRadius: 'var(--radius-md)',
             }}>
-              <div style={{fontSize: '0.8rem', fontWeight: 700, color: '#166534', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem'}}><ClipboardList size={14} /> After downloading</div>
+              <div style={{fontSize: '0.8rem', fontWeight: 700, color: '#166534', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem'}}><ClipboardList size={14} /> After copying script</div>
               <div style={{fontSize: '0.8rem', color: '#15803d', lineHeight: 1.7}}>
                 <div style={{display: 'flex', gap: '0.5rem', alignItems: 'flex-start'}}>
-                  <span style={{fontWeight: 700, minWidth: '1.2rem'}}>1.</span>
-                  <span>Open your terminal and run:<br/>
-                    <code style={{background: '#dcfce7', padding: '2px 6px', borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.78rem'}}>bash setup.sh</code>
-                  </span>
-                </div>
-                <div style={{display: 'flex', gap: '0.5rem', alignItems: 'flex-start', marginTop: '0.5rem'}}>
-                  <span style={{fontWeight: 700, minWidth: '1.2rem'}}>2.</span>
-                  <span>Then start your bot:<br/>
-                    <code style={{background: '#dcfce7', padding: '2px 6px', borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.78rem'}}>cd polyflow-bot && npm start</code>
+                  <span>Simply paste the script into any terminal window to build and run your bot instantly:<br/>
+                    <code style={{background: '#dcfce7', padding: '2px 6px', borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.78rem', display: 'inline-block', marginTop: '4px'}}>Cmd+V</code> then <code style={{background: '#dcfce7', padding: '2px 6px', borderRadius: '4px', fontFamily: 'monospace', fontSize: '0.78rem', display: 'inline-block', marginTop: '4px'}}>Enter</code>
                   </span>
                 </div>
                 <div style={{marginTop: '0.75rem', fontSize: '0.75rem', color: '#166534', opacity: 0.8}}>
-                  <Zap size={12} style={{display:'inline', marginRight:'4px', verticalAlign:'middle'}} />Analyzes live markets instantly.{apiKey ? ' Your API keys are included — ready for live trading!' : ' Add API keys for live trading.'}
+                  <Zap size={12} style={{display:'inline', marginRight:'4px', verticalAlign:'middle'}} />Analyzes live markets on startup.{apiKey ? ' Your API keys are included — ready for live trading!' : ' Add API keys for live trading.'}
                 </div>
               </div>
             </div>
