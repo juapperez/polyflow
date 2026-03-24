@@ -1041,7 +1041,7 @@ export class CustomStrategy extends Strategy {
                       className="market-select"
                       style={{fontFamily: 'monospace', fontSize: '0.8rem'}}
                     />
-                    <a href="https://docs.polymarket.com" target="_blank" rel="noopener noreferrer" style={{fontSize: '0.75rem', color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: '0.25rem'}}>
+                    <a href="/Synthesis_API_Guide.pdf" target="_blank" rel="noopener noreferrer" style={{fontSize: '0.75rem', color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: '0.25rem'}}>
                       <Globe size={12} /> How to get API keys →
                     </a>
                   </div>
